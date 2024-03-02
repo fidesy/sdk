@@ -1,0 +1,29 @@
+version: '3.7'
+
+networks:
+  zoo:
+    external: true
+
+services:
+  cache:
+    container_name: domain-name-service-redis
+    image: redis:6.2-alpine
+    restart: always
+    command: redis-server --save 20 1 --loglevel warning --requirepass 5gthjjicCPr5wcliairk
+    volumes:
+      - domain-name-service-redis:/data
+    networks:
+      - zoo
+  service:
+    container_name: domain-name-service
+    build: .
+    ports:
+      - "10000:10000"
+    environment:
+      - "GRPC_PORT=10000"
+      - "ENV=PRODUCTION"
+    networks:
+      - zoo
+
+volumes:
+  domain-name-service-redis:

@@ -1,0 +1,11 @@
+type: google.api.Service
+config_version: 3
+
+http:
+  rules:
+    - selector: domain_name_service.DomainNameService.GetAddress
+      post: /domain_name_service.DomainNameService.GetAddress
+      body: '*'
+    - selector: domain_name_service.DomainNameService.UpdateAddress
+      post: /domain_name_service.DomainNameService.UpdateAddress
+      body: '*'
