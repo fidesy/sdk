@@ -3,6 +3,8 @@ package grpc
 import (
 	"context"
 	"fmt"
+	grpcResolver "github.com/fidesy/sdk/common/grpc/resolver"
+	"google.golang.org/grpc/resolver"
 	"net"
 	"os"
 	"strings"
@@ -16,7 +18,7 @@ import (
 var appName = os.Getenv("APP_NAME")
 
 type (
-	ServerOption func(s *Server)
+	ServerOption func(s *Server) error
 	Server       struct {
 		port           string
 		metricsPort    string
@@ -30,65 +32,85 @@ type (
 )
 
 func WithPort(port string) ServerOption {
-	return func(s *Server) {
+	return func(s *Server) error {
 		s.port = port
+		return nil
 	}
 }
 
 func WithMetricsPort(metricsPort string) ServerOption {
-	return func(s *Server) {
+	return func(s *Server) error {
 		s.metricsPort = metricsPort
+		return nil
+	}
+}
+
+func WithGraylog(graylogHost string) ServerOption {
+	return func(s *Server) error {
+		logAppName := strings.ReplaceAll(appName, "-", "_")
+
+		w, err := gsyslog.DialLogger("udp", graylogHost, gsyslog.LOG_ERR, "SYSLOG", logAppName)
+		if err != nil {
+			return fmt.Errorf("gsyslog.DialLogger: %w", err)
+		}
+
+		logger.Init(w)
+
+		return nil
 	}
 }
 
 func WithTracer(jaegerEndpoint string) ServerOption {
-	return func(s *Server) {
-		s.jaegerEndpoint = jaegerEndpoint
+	return func(s *Server) error {
+		var err error
+		_, closer, err = NewTracer(jaegerEndpoint)
+		if err != nil {
+			return fmt.Errorf("config.NewJaegerTracer: %v", err)
+		}
+
+		return nil
 	}
 }
 
-func WithDomainNameService(dnsHost string) ServerOption {
-	return func(s *Server) {
-		s.dnsHost = dnsHost
+func WithDomainNameService(ctx context.Context, dnsHost string) ServerOption {
+	return func(s *Server) error {
+		err := NewDomainNameService(ctx, dnsHost)
+		if err != nil {
+			return fmt.Errorf("NewDomainNameService: %w", err)
+		}
+
+		rb := &grpcResolver.Builder{
+			DomainNameService: domainNameServiceClient,
+		}
+		resolver.Register(rb)
+
+		return nil
 	}
 }
 
-func NewServer(options ...ServerOption) *Server {
+func NewServer(options ...ServerOption) (*Server, error) {
 	if appName == "" {
 		panic("APP_NAME env variable is required")
 	}
 
 	s := &Server{}
 
-	initLogger()
 	initMetrics()
 
 	for _, opt := range options {
-		opt(s)
+		err := opt(s)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	s.fillInDefaultValues()
 
-	return s
+	return s, nil
 }
 
 func (s *Server) Run(ctx context.Context, descs ...ServiceDescriptor) error {
-	// if jaeger endpoint passed
-	// then init jaeger
-	if s.jaegerEndpoint != "" {
-		_, closer, err := NewTracer(s.jaegerEndpoint)
-		if err != nil {
-			logger.Fatalf("config.NewJaegerTracer: %v", err)
-		}
-		defer closer.Close()
-	}
-
-	if s.dnsHost != "" {
-		err := NewDomainNameService(ctx, s.dnsHost)
-		if err != nil {
-			return fmt.Errorf("NewDomainNameService: %w", err)
-		}
-	}
+	defer s.shutDown()
 
 	interceptors := []grpc.UnaryServerInterceptor{
 		metricsInterceptor(),
@@ -148,7 +170,21 @@ func (s *Server) Run(ctx context.Context, descs ...ServiceDescriptor) error {
 	}
 }
 
+func (s *Server) shutDown() {
+	if closer != nil {
+		err := closer.Close()
+		if err != nil {
+			logger.Errorf("closer.Close: %v", err)
+		}
+	}
+}
+
 func (s *Server) fillInDefaultValues() {
+	if logger.Get() == nil {
+		logger.Init(os.Stdout)
+		logger.Info("GRAYLOG_HOST env not found, using local logger")
+	}
+
 	if s.port == "" {
 		logger.Info("Using default grpc server port 8080")
 		s.port = "8080"
@@ -158,21 +194,4 @@ func (s *Server) fillInDefaultValues() {
 		logger.Info("Using default metrics server port 8081")
 		s.metricsPort = "8081"
 	}
-}
-
-func initLogger() {
-	graylogHost := os.Getenv("GRAYLOG_HOST")
-
-	logAppName := strings.ReplaceAll(appName, "-", "_")
-
-	w, err := gsyslog.DialLogger("udp", graylogHost, gsyslog.LOG_ERR, "SYSLOG", logAppName)
-	// If there is an error or no graylog host
-	// then write logs to STDOUT
-	if err != nil || graylogHost == "" {
-		logger.Init(os.Stdout)
-		logger.Info("GRAYLOG_HOST env not found, using local logger")
-		return
-	}
-
-	logger.Init(w)
 }

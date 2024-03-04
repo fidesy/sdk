@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -19,15 +20,18 @@ func main() {
 	)
 	defer cancel()
 
-	grpcServer := grpc.NewServer(
+	grpcServer, err := grpc.NewServer(
 		grpc.WithPort(os.Getenv("GRPC_PORT")),
 		grpc.WithMetricsPort(os.Getenv("METRICS_PORT")),
-		grpc.WithDomainNameService("domain-name-service:10000"),
+		grpc.WithDomainNameService(ctx, "localhost:10000"),
 	)
+	if err != nil {
+		log.Fatalf("grpc.NewServer: %v", err)
+	}
 
 	impl := app.New()
 
-	err := grpcServer.Run(ctx, impl)
+	err = grpcServer.Run(ctx, impl)
 	if err != nil {
 		logger.Fatalf("grpcServer.Run: %v", err)
 	}

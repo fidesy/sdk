@@ -33,6 +33,10 @@ func Init(w io.Writer) {
 	})
 }
 
+func Get() *zap.Logger {
+	return l
+}
+
 func Info(msg string, fields ...zap.Field) {
 	fields = append([]zap.Field{
 		zap.String("message", msg),
@@ -42,9 +46,9 @@ func Info(msg string, fields ...zap.Field) {
 	l.Info("info", fields...)
 }
 
-func Errorf(err error, fields ...zap.Field) {
+func Errorf(format string, err error, fields ...zap.Field) {
 	fields = append([]zap.Field{
-		zap.Error(err),
+		zap.Error(fmt.Errorf(format, err)),
 		zap.String("service", appName),
 	}, fields...)
 

@@ -17,7 +17,10 @@ import (
 	jaegercfg "github.com/uber/jaeger-client-go/config"
 )
 
-var tracer opentracing.Tracer
+var (
+	tracer opentracing.Tracer
+	closer io.Closer
+)
 
 func NewTracer(jaegerEndpoint string) (opentracing.Tracer, io.Closer, error) {
 	cfg := jaegercfg.Configuration{
@@ -101,7 +104,7 @@ func tracingInterceptor() grpc.UnaryServerInterceptor {
 		}
 		// log error
 		logger.Errorf(
-			handlerErr,
+			"%w", handlerErr,
 			zap.String("trace_id", traceIDStr),
 			zap.String("status_code", st.Code().String()),
 		)
