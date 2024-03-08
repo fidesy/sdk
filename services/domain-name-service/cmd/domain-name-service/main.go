@@ -6,23 +6,21 @@ import (
 	"github.com/fidesy/sdk/services/domain-name-service/internal/app"
 	"github.com/fidesy/sdk/services/domain-name-service/internal/config"
 	"github.com/fidesy/sdk/services/domain-name-service/internal/pkg/domain-name-service"
+	"github.com/fidesy/sdk/services/domain-name-service/internal/pkg/metrics"
 	"github.com/fidesy/sdk/services/domain-name-service/internal/pkg/redis"
 	desc "github.com/fidesy/sdk/services/domain-name-service/pkg/domain-name-service"
-	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"github.com/rs/cors"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"log"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 )
 
 var (
-	grpcPort  string
-	proxyPort string
+	grpcPort    string
+	metricsPort string
 )
 
 func main() {
@@ -31,9 +29,9 @@ func main() {
 		log.Fatalf("GRPC_PORT ENV is required")
 	}
 
-	proxyPort = os.Getenv("PROXY_PORT")
-	if proxyPort == "" {
-		log.Fatalf("PROXY_PORT ENV is required")
+	metricsPort = os.Getenv("METRICS_PORT")
+	if metricsPort == "" {
+		log.Fatalf("METRICS_PORT ENV is required")
 	}
 
 	ctx, cancel := signal.NotifyContext(
@@ -50,6 +48,8 @@ func main() {
 		log.Fatalf("config.Init: %v", err)
 	}
 
+	metrics.Init()
+
 	storage, err := redis.New(ctx)
 	if err != nil {
 		log.Fatalf("redis.New: %v", err)
@@ -59,7 +59,11 @@ func main() {
 
 	impl := app.New(domainNameService)
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(
+			metrics.Interceptor(),
+		),
+	)
 	grpcServer.RegisterService(&desc.DomainNameService_ServiceDesc, impl)
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", grpcPort))
@@ -69,13 +73,13 @@ func main() {
 
 	errGroup := errgroup.Group{}
 
-	// run http reverse proxy
+	// run metrics
 	errGroup.Go(func() error {
-		log.Printf("http proxy is running at %s port", proxyPort)
+		log.Printf("metrics endpoint is running at %s port", metricsPort)
 
-		err = runReverseProxy(ctx, impl)
+		err = metrics.Run(ctx, metricsPort)
 		if err != nil {
-			return fmt.Errorf("runReverseProxy: %w", err)
+			return fmt.Errorf("metrics.Run: %w", err)
 		}
 
 		return nil
@@ -95,24 +99,4 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-}
-
-func runReverseProxy(ctx context.Context, impl *app.Implementation) error {
-	router := runtime.NewServeMux()
-
-	corsHandler := cors.New(cors.Options{
-		AllowedOrigins: []string{"*"},
-		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE"},
-		AllowedHeaders: []string{"*"},
-		Debug:          false,
-	})
-
-	server := &http.Server{
-		Addr:    fmt.Sprintf(":%s", proxyPort),
-		Handler: corsHandler.Handler(router),
-	}
-
-	desc.RegisterDomainNameServiceHandlerServer(ctx, router, impl)
-
-	return server.ListenAndServe()
 }

@@ -2,8 +2,11 @@ package resolver
 
 import (
 	"context"
+	"fmt"
 	"google.golang.org/grpc/resolver"
 	"log"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,7 +36,7 @@ func (r *Resolver) Close() {
 func (r *Resolver) watch() {
 	defer r.wg.Done()
 	r.lookup(r.target)
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
 	for {
 		select {
 		case <-r.ctx.Done():
@@ -45,6 +48,12 @@ func (r *Resolver) watch() {
 }
 
 func (r *Resolver) lookup(target string) {
+	// Using different service names for different environments
+	env := strings.ToUpper(os.Getenv("ENV"))
+	if env == "LOCAL" || env == "STAGING" {
+		target = fmt.Sprintf("%s-stage", target)
+	}
+
 	addressResp, err := r.domainNameService.GetAddress(context.TODO(), &domain_name_service.GetAddressRequest{
 		ServiceName: target,
 	})
