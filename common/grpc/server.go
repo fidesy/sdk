@@ -20,11 +20,8 @@ var appName = os.Getenv("APP_NAME")
 type (
 	ServerOption func(s *Server) error
 	Server       struct {
-		port           string
-		metricsPort    string
-		jaegerEndpoint string
-
-		dnsHost string
+		port        string
+		metricsPort string
 	}
 	ServiceDescriptor interface {
 		GetDescription() *grpc.ServiceDesc

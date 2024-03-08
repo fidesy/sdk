@@ -2,11 +2,8 @@ package resolver
 
 import (
 	"context"
-	"fmt"
 	"google.golang.org/grpc/resolver"
 	"log"
-	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -48,12 +45,6 @@ func (r *Resolver) watch() {
 }
 
 func (r *Resolver) lookup(target string) {
-	// Use staging versions for non prod services
-	env := os.Getenv("ENV")
-	if strings.ToUpper(env) == "STAGING" {
-		target = fmt.Sprintf("%s-stage", target)
-	}
-
 	addressResp, err := r.domainNameService.GetAddress(context.TODO(), &domain_name_service.GetAddressRequest{
 		ServiceName: target,
 	})

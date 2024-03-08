@@ -29,5 +29,5 @@ func (b *Builder) Build(target resolver.Target, cc resolver.ClientConn, opts res
 }
 
 func (b *Builder) Scheme() string {
-	return "fidesy"
+	return "rpc"
 }
