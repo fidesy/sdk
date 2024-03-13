@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	grpcResolver "github.com/fidesy/sdk/common/grpc/resolver"
+	randomCommon "github.com/fidesy/sdk/common/random"
 	"google.golang.org/grpc/resolver"
 	"net"
 	"os"
@@ -183,12 +184,14 @@ func (s *Server) fillInDefaultValues() {
 	}
 
 	if s.port == "" {
-		logger.Info("Using default grpc server port 8080")
-		s.port = "8080"
+		randomPort := randomCommon.RandomPort()
+		logger.Info(fmt.Sprintf("Using default grpc server port %s", randomPort))
+		s.port = randomPort
 	}
 
 	if s.metricsPort == "" {
-		logger.Info("Using default metrics server port 8081")
-		s.metricsPort = "8081"
+		randomPort := randomCommon.RandomPort()
+		logger.Info(fmt.Sprintf("Using default metrics server port %s", randomPort))
+		s.metricsPort = randomPort
 	}
 }
