@@ -4,6 +4,9 @@ go 1.21.1
 
 require (
 	github.com/IBM/sarama v1.43.0
+	github.com/Masterminds/squirrel v1.5.4
+	github.com/fidesy/sdk/services/realtime-configs-service v0.0.0-20240409212146-10edcc4c043b
+	github.com/georgysavva/scany/v2 v2.1.3
 	github.com/golang/mock v1.6.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.19.1
 	github.com/hashicorp/go-syslog v1.0.0
@@ -43,6 +46,8 @@ require (
 	github.com/jcmturner/gokrb5/v8 v8.4.4 // indirect
 	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
 	github.com/klauspost/compress v1.17.7 // indirect
+	github.com/lann/builder v0.0.0-20180802200727-47ae307949d0 // indirect
+	github.com/lann/ps v0.0.0-20150810152359-62de8c46ede0 // indirect
 	github.com/montanaflynn/stats v0.0.0-20171201202039-1bf9dbcd8cbe // indirect
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
 	github.com/pkg/errors v0.9.1 // indirect

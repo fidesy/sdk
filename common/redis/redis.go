@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/opentracing/opentracing-go"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -28,6 +29,9 @@ func (c *Client) RedisClient() *redis.Client {
 }
 
 func (c *Client) Set(ctx context.Context, key string, val interface{}, expiration time.Duration) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "redis.Set")
+	defer span.Finish()
+
 	bytes, err := json.Marshal(val)
 	if err != nil {
 		return fmt.Errorf("json.Marshal: %w", err)
@@ -42,6 +46,9 @@ func (c *Client) Set(ctx context.Context, key string, val interface{}, expiratio
 }
 
 func (c *Client) Get(ctx context.Context, key string, dst interface{}) (bool, error) {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "redis.Get")
+	defer span.Finish()
+
 	result := c.redisClient.Get(ctx, key)
 	if err := result.Err(); err != nil {
 		// not found

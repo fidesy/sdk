@@ -3,12 +3,18 @@ package grpc
 import (
 	"context"
 	"fmt"
-	grpcResolver "github.com/fidesy/sdk/common/grpc/resolver"
-	randomCommon "github.com/fidesy/sdk/common/random"
-	"google.golang.org/grpc/resolver"
 	"net"
+	"net/http"
 	"os"
 	"strings"
+
+	"github.com/fidesy/sdk/common/grpc/config"
+	grpcResolver "github.com/fidesy/sdk/common/grpc/resolver"
+	randomCommon "github.com/fidesy/sdk/common/random"
+	realtime_configs_service "github.com/fidesy/sdk/services/realtime-configs-service/pkg/realtime-configs-service"
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/resolver"
 
 	domain_name_service "github.com/fidesy/sdk/common/grpc/pkg/domain-name-service"
 	"github.com/fidesy/sdk/common/logger"
@@ -23,6 +29,9 @@ type (
 	Server       struct {
 		port        string
 		metricsPort string
+		proxyPort   string
+		proxyRouter *runtime.ServeMux
+		swaggerPort string
 	}
 	ServiceDescriptor interface {
 		GetDescription() *grpc.ServiceDesc
@@ -39,6 +48,21 @@ func WithPort(port string) ServerOption {
 func WithMetricsPort(metricsPort string) ServerOption {
 	return func(s *Server) error {
 		s.metricsPort = metricsPort
+		return nil
+	}
+}
+
+func WithProxyPort(proxyPort string) ServerOption {
+	return func(s *Server) error {
+		s.proxyPort = proxyPort
+		s.proxyRouter = runtime.NewServeMux()
+		return nil
+	}
+}
+
+func WithSwaggerPort(swaggerPort string) ServerOption {
+	return func(s *Server) error {
+		s.swaggerPort = swaggerPort
 		return nil
 	}
 }
@@ -88,10 +112,16 @@ func WithDomainNameService(ctx context.Context, dnsHost string) ServerOption {
 
 func WithRealtimeConfigsService(ctx context.Context, dnsHost string) ServerOption {
 	return func(s *Server) error {
-		err := NewRealtimeConfigsService(ctx, dnsHost)
+		client, err := NewClient[realtime_configs_service.RealtimeConfigsServiceClient](
+			ctx,
+			realtime_configs_service.NewRealtimeConfigsServiceClient,
+			dnsHost,
+		)
 		if err != nil {
 			return fmt.Errorf("NewRealtimeConfigsService: %w", err)
 		}
+
+		config.Init(client)
 
 		return nil
 	}
@@ -143,40 +173,68 @@ func (s *Server) Run(ctx context.Context, descs ...ServiceDescriptor) error {
 		return fmt.Errorf("net.Listen: %w", err)
 	}
 
-	errChan := make(chan error)
+	errGroup := errgroup.Group{}
 
-	go func() {
+	errGroup.Go(func() error {
 		if domainNameServiceClient != nil {
 			_, err = domainNameServiceClient.UpdateAddress(ctx, &domain_name_service.UpdateAddressRequest{
 				ServiceName: appName,
 				Address:     fmt.Sprintf("%s:%s", appName, s.port),
 			})
 			if err != nil {
-				errChan <- fmt.Errorf("domainNameServiceClient.UpdatePort: %w", err)
-				return
+				return fmt.Errorf("domainNameServiceClient.UpdatePort: %w", err)
 			}
 		}
 
 		logger.Info(fmt.Sprintf("grpcServer is running at %s port", s.port))
 		if err = grpcServer.Serve(lis); err != nil {
-			errChan <- fmt.Errorf("grpcServer.Serve: %w", err)
+			return fmt.Errorf("grpcServer.Serve: %w", err)
 		}
-	}()
 
-	go func() {
+		return nil
+	})
+
+	errGroup.Go(func() error {
 		logger.Info(fmt.Sprintf("metrics are running at %s port", s.metricsPort))
 		if err = runMetrics(ctx, s.metricsPort); err != nil {
-			errChan <- fmt.Errorf("runMetrics: %w", err)
+			return fmt.Errorf("runMetrics: %w", err)
 		}
 
-	}()
-
-	select {
-	case <-ctx.Done():
 		return nil
-	case err = <-errChan:
-		return err
+	})
+
+	if s.proxyPort != "" {
+		errGroup.Go(func() error {
+			server := &http.Server{
+				Addr:    fmt.Sprintf(":%s", s.proxyPort),
+				Handler: s.proxyRouter,
+			}
+
+			if err = server.ListenAndServe(); err != nil {
+				return fmt.Errorf("httpProxy: server.ListenAndServe: %w", err)
+			}
+			return nil
+		})
 	}
+
+	if s.swaggerPort != "" {
+		errGroup.Go(func() error {
+			fs := http.FileServer(http.Dir("./swaggerui"))
+			http.Handle("/docs/", http.StripPrefix("/docs/", fs))
+
+			if err := http.ListenAndServe(fmt.Sprintf(":%s", s.swaggerPort), nil); err != nil {
+				return fmt.Errorf("swagger http.ListenAndServe: %w", err)
+			}
+
+			return nil
+		})
+	}
+
+	return errGroup.Wait()
+}
+
+func (s *Server) ProxyRouter() *runtime.ServeMux {
+	return s.proxyRouter
 }
 
 func (s *Server) shutDown() {

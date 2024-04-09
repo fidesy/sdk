@@ -36,10 +36,10 @@ run:
 
 	make build
 
-	docker run --name ${PROJECT_NAME} -d \
+	docker run --name realtime-configs-service-stage -d \
 			--network zoo \
-			-e APP_NAME=${PROJECT_NAME} \
+			-e APP_NAME=realtime-configs-service-stage \
 			-e ENV=PRODUCTION \
-			-e GRPC_PORT=55000 -p 55000:55000 \
-			-e METRICS_PORT=55001 -p 55001:55001 \
-			${PROJECT_NAME}
+			-e GRPC_PORT=56000 -p 56000:56000 \
+			-e METRICS_PORT=56001 -p 56001:56001 \
+			realtime-configs-service

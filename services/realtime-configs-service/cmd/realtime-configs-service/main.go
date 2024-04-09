@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/fidesy/sdk/common/logger"
 	sdkRedis "github.com/fidesy/sdk/common/redis"
 	"github.com/fidesy/sdk/services/realtime-configs-service/internal/app"
 	"github.com/fidesy/sdk/services/realtime-configs-service/internal/config"
@@ -58,7 +57,7 @@ func main() {
 		DB:       0,
 	})
 	if err != nil {
-		logger.Fatalf("redis.Connect: %v", err)
+		log.Fatalf("redis.Connect: %v", err)
 	}
 
 	realtimeConfigsService := realtime_configs_service.New(redisClient)

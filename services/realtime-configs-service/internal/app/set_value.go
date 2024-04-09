@@ -7,7 +7,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func (i *Implementation) UpdateAddress(ctx context.Context, req *desc.SetValueRequest) (*desc.SetValueResponse, error) {
+func (i *Implementation) SetValue(ctx context.Context, req *desc.SetValueRequest) (*desc.SetValueResponse, error) {
 	err := i.realtimeConfigsService.SetValue(ctx, req.GetKey(), req.GetValue(), req.GetServiceName())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "realtimeConfigsService.SetValue: %v", err)

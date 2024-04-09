@@ -17,14 +17,14 @@ var reg *prometheus.Registry
 var (
 	requests = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "domain_name_service_grpc_requests",
+			Name: "realtime_configs_service_grpc_requests",
 			Help: "Count of grpc requests by handlers",
 		},
 		[]string{"handler"},
 	)
 	responseTime = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "domain_name_service_grpc_response_time",
+			Name:    "realtime_configs_service_grpc_response_time",
 			Help:    "Response time of grpc requests",
 			Buckets: []float64{0.1, 0.5, 1, 2, 5},
 		},
@@ -32,7 +32,7 @@ var (
 	)
 	statusCodes = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "domain_name_service_status_codes",
+			Name: "realtime_configs_service_status_codes",
 			Help: "Handlers not successful status codes",
 		},
 		[]string{"handler", "status_code"},
