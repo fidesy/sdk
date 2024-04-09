@@ -1,0 +1,31 @@
+version: '3.7'
+
+networks:
+  zoo:
+    external: true
+
+services:
+  cache:
+    container_name: realtime-configs-service-redis
+    image: redis:6.2-alpine
+    restart: always
+    command: redis-server --save 20 1 --loglevel warning --requirepass zYPujRIWnagl2XPZnoFZ
+    volumes:
+      - realtime-configs-service-redis:/data
+    networks:
+      - zoo
+  service:
+    container_name: realtime-configs-service
+    build: .
+    ports:
+      - "55000:55000"
+      - "55001:55001"
+    environment:
+      - "GRPC_PORT=55000"
+      - "METRICS_PORT=55001"
+      - "ENV=PRODUCTION"
+    networks:
+      - zoo
+
+volumes:
+  realtime-configs-service-redis:

@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package realtime_configs_service;
+
+option go_package = "github.com/fidesy/sdk/services/realtime-configs-service;realtime_configs_service";
+
+service RealtimeConfigsService {
+  rpc GetValue(GetValueRequest) returns(GetValueResponse);
+  rpc SetValue(SetValueRequest) returns(SetValueResponse);
+}
+
+message GetValueRequest {
+  string key = 1;
+  string service_name = 2;
+}
+
+message GetValueResponse {
+  string value = 1;
+}
+
+message SetValueRequest {
+  string key = 1;
+  string value = 2;
+  string service_name = 3;
+}
+
+message SetValueResponse {}

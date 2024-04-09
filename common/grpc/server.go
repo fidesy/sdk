@@ -86,6 +86,17 @@ func WithDomainNameService(ctx context.Context, dnsHost string) ServerOption {
 	}
 }
 
+func WithRealtimeConfigsService(ctx context.Context, dnsHost string) ServerOption {
+	return func(s *Server) error {
+		err := NewRealtimeConfigsService(ctx, dnsHost)
+		if err != nil {
+			return fmt.Errorf("NewRealtimeConfigsService: %w", err)
+		}
+
+		return nil
+	}
+}
+
 func NewServer(options ...ServerOption) (*Server, error) {
 	if appName == "" {
 		panic("APP_NAME env variable is required")
