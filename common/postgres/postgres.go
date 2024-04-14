@@ -2,16 +2,16 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	sq "github.com/Masterminds/squirrel"
 	"github.com/fidesy/sdk/common/logger"
+	"github.com/georgysavva/scany/v2/pgxscan"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/opentracing/opentracing-go"
-
-	sq "github.com/Masterminds/squirrel"
-	"github.com/georgysavva/scany/v2/pgxscan"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/opentracing/opentracing-go"
 )
 
 func Connect(ctx context.Context, pgDsn string) (*pgxpool.Pool, error) {
@@ -32,8 +32,13 @@ func Builder() sq.StatementBuilderType {
 }
 
 func Exec[T any](ctx context.Context, db pgxscan.Querier, sqlizer sq.Sqlizer) (*T, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "postgres.Exec")
-	defer span.Finish()
+	var span opentracing.Span
+
+	skipSpan, ok := ctx.Value("skip_span").(bool)
+	if !ok || !skipSpan {
+		span, ctx = opentracing.StartSpanFromContext(ctx, "postgres.Exec")
+		defer span.Finish()
+	}
 
 	query, args, err := sqlizer.ToSql()
 	if err != nil {
@@ -50,9 +55,64 @@ func Exec[T any](ctx context.Context, db pgxscan.Querier, sqlizer sq.Sqlizer) (*
 	return &model, nil
 }
 
+func ExecWithOutbox(ctx context.Context, db *pgxpool.Pool, dst Model, sqlizer sq.Sqlizer) error {
+	var span opentracing.Span
+
+	skipSpan, ok := ctx.Value("skip_span").(bool)
+	if !ok || !skipSpan {
+		span, ctx = opentracing.StartSpanFromContext(ctx, "postgres.Exec")
+		defer span.Finish()
+	}
+
+	query, args, err := sqlizer.ToSql()
+	if err != nil {
+		return fmt.Errorf("sqlizer.ToSql: %v", err)
+	}
+
+	err = WithTransaction(ctx, db, func(tx pgx.Tx) error {
+		err = pgxscan.Get(ctx, tx, dst, query, args...)
+		if err != nil {
+			return handleError(err)
+		}
+
+		message, err := json.Marshal(dst)
+		if err != nil {
+			return fmt.Errorf("json.Marshal: %w", err)
+		}
+
+		outboxQuery := Builder().
+			Insert(fmt.Sprintf("%s_outbox", dst.TableName())).
+			SetMap(map[string]interface{}{
+				"message": message,
+			})
+
+		outboxSql, outboxArgs, err := outboxQuery.ToSql()
+		if err != nil {
+			return fmt.Errorf("outboxQuery.ToSql: %w", err)
+		}
+
+		_, err = tx.Exec(ctx, outboxSql, outboxArgs...)
+		if err != nil {
+			return handleError(err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("WithTransaction: %w", err)
+	}
+
+	return nil
+}
+
 func Select[T any](ctx context.Context, db pgxscan.Querier, sqlizer sq.Sqlizer) ([]*T, error) {
-	span, ctx := opentracing.StartSpanFromContext(ctx, "postgres.Select")
-	defer span.Finish()
+	var span opentracing.Span
+
+	skipSpan, ok := ctx.Value("skip_span").(bool)
+	if !ok || !skipSpan {
+		span, ctx = opentracing.StartSpanFromContext(ctx, "postgres.Select")
+		defer span.Finish()
+	}
 
 	query, args, err := sqlizer.ToSql()
 	if err != nil {
