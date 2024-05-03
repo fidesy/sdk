@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
 	sq "github.com/Masterminds/squirrel"
 	"github.com/fidesy/sdk/common/logger"
 	"github.com/georgysavva/scany/v2/pgxscan"

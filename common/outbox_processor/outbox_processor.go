@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/fidesy/sdk/common/logger"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 )
@@ -18,7 +19,7 @@ type (
 	}
 
 	Storage interface {
-		ListOutboxMessages(ctx context.Context, limit uint64) ([]*OutboxMessage, error)
+		ListOutboxMessages(ctx context.Context, limit uint64) ([]*Message, error)
 		DeleteOutboxMessages(ctx context.Context, ids []int64) error
 	}
 
@@ -27,21 +28,28 @@ type (
 	}
 )
 
-func New(storage Storage, producer KafkaProducer, topicName string) *Service {
+func New(
+	tableName string,
+	topicName string,
+	pool *pgxpool.Pool,
+	producer KafkaProducer,
+) *Service {
 	return &Service{
-		topicName: topicName,
-
-		storage:       storage,
+		topicName:     topicName,
+		storage:       NewStorage(tableName, pool),
 		kafkaProducer: producer,
 	}
 }
 
 func (s *Service) Publish(ctx context.Context) {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.Tick(500 * time.Millisecond):
+		case <-ticker.C:
 			s.publish(ctx)
 		}
 	}
@@ -64,12 +72,12 @@ func (s *Service) publish(ctx context.Context) {
 		s.kafkaProducer.ProduceMessage(s.topicName, []byte(message.Message))
 	}
 
-	err = s.storage.DeleteOutboxMessages(ctx, lo.Map(messages, func(message *OutboxMessage, _ int) int64 {
+	err = s.storage.DeleteOutboxMessages(ctx, lo.Map(messages, func(message *Message, _ int) int64 {
 		return message.ID
 	}))
 	if err != nil {
 		logger.Errorf("storage.DeleteOutboxMessages: %v", err,
-			zap.Int("messages_length:", len(messages)),
+			zap.Int("messageID:", int(messages[0].ID)),
 		)
 	}
 }

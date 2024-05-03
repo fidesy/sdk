@@ -4,8 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/opentracing/opentracing-go"
 	"time"
+
+	"github.com/opentracing/opentracing-go"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -70,4 +71,13 @@ func (c *Client) Get(ctx context.Context, key string, dst interface{}) (bool, er
 	}
 
 	return true, nil
+}
+
+func (c *Client) Delete(ctx context.Context, key string) error {
+	cmd := c.redisClient.Del(ctx, key)
+	if err := cmd.Err(); err != nil {
+		return fmt.Errorf("redisClient.Del: %w", err)
+	}
+
+	return nil
 }

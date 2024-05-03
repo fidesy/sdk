@@ -2,12 +2,13 @@ package logger
 
 import (
 	"fmt"
-	"go.uber.org/zap/zapcore"
 	"io"
 	"os"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var (
@@ -41,6 +42,7 @@ func Info(msg string, fields ...zap.Field) {
 	fields = append([]zap.Field{
 		zap.String("message", msg),
 		zap.String("service", appName),
+		zap.Time("timestamp", time.Now()),
 	}, fields...)
 
 	l.Info("info", fields...)
@@ -50,6 +52,7 @@ func Errorf(format string, err error, fields ...zap.Field) {
 	fields = append([]zap.Field{
 		zap.Error(fmt.Errorf(format, err)),
 		zap.String("service", appName),
+		zap.Time("timestamp", time.Now()),
 	}, fields...)
 
 	l.Error("error", fields...)
@@ -57,6 +60,9 @@ func Errorf(format string, err error, fields ...zap.Field) {
 
 func Fatalf(format string, a ...any) {
 	l.Fatal("fatal", zap.Error(
-		fmt.Errorf(format, a),
-	))
+		fmt.Errorf(format, a...),
+	),
+		zap.Time("timestamp", time.Now()),
+	)
+
 }
