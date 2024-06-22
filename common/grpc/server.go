@@ -13,6 +13,7 @@ import (
 	randomCommon "github.com/fidesy/sdk/common/random"
 	realtime_configs_service "github.com/fidesy/sdk/services/realtime-configs-service/pkg/realtime-configs-service"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/rs/cors"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/resolver"
 
@@ -205,9 +206,16 @@ func (s *Server) Run(ctx context.Context, descs ...ServiceDescriptor) error {
 
 	if s.proxyPort != "" {
 		errGroup.Go(func() error {
+			corsHandler := cors.New(cors.Options{
+				AllowedOrigins: []string{"*"},
+				AllowedMethods: []string{"GET", "POST", "PUT", "PATCH"},
+				AllowedHeaders: []string{"*"},
+				Debug:          false,
+			})
+
 			server := &http.Server{
 				Addr:    fmt.Sprintf(":%s", s.proxyPort),
-				Handler: s.proxyRouter,
+				Handler: corsHandler.Handler(s.proxyRouter),
 			}
 
 			if err = server.ListenAndServe(); err != nil {
