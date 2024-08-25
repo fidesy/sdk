@@ -106,6 +106,49 @@ func ExecWithOutbox(ctx context.Context, db *pgxpool.Pool, dst Model, sqlizer sq
 	return nil
 }
 
+func ExecWithOutboxTx(ctx context.Context, tx pgx.Tx, dst Model, sqlizer sq.Sqlizer) error {
+	var span opentracing.Span
+
+	skipSpan, ok := ctx.Value("skip_span").(bool)
+	if !ok || !skipSpan {
+		span, ctx = opentracing.StartSpanFromContext(ctx, "postgres.ExecWithOutboxTx")
+		defer span.Finish()
+	}
+
+	query, args, err := sqlizer.ToSql()
+	if err != nil {
+		return fmt.Errorf("sqlizer.ToSql: %v", err)
+	}
+
+	err = pgxscan.Get(ctx, tx, dst, query, args...)
+	if err != nil {
+		return handleError(err)
+	}
+
+	message, err := json.Marshal(dst)
+	if err != nil {
+		return fmt.Errorf("json.Marshal: %w", err)
+	}
+
+	outboxQuery := Builder().
+		Insert(fmt.Sprintf("%s_outbox", dst.TableName())).
+		SetMap(map[string]interface{}{
+			"message": message,
+		})
+
+	outboxSql, outboxArgs, err := outboxQuery.ToSql()
+	if err != nil {
+		return fmt.Errorf("outboxQuery.ToSql: %w", err)
+	}
+
+	_, err = tx.Exec(ctx, outboxSql, outboxArgs...)
+	if err != nil {
+		return handleError(err)
+	}
+
+	return nil
+}
+
 func Select[T any](ctx context.Context, db pgxscan.Querier, sqlizer sq.Sqlizer) ([]*T, error) {
 	var span opentracing.Span
 
