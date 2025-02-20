@@ -38,6 +38,6 @@ func (s *storage) DeleteOutboxMessages(ctx context.Context, ids []int64) error {
 		}).
 		Suffix("RETURNING id")
 
-	_, err := postgres.Exec[Message](ctx, s.pool, query)
+	_, err := postgres.Select[Message](ctx, s.pool, query)
 	return err
 }
