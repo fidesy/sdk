@@ -3,39 +3,34 @@ package kafka
 import (
 	"context"
 	"fmt"
-	"time"
 
-	"github.com/IBM/sarama"
+	"github.com/segmentio/kafka-go"
 )
 
 type Producer struct {
-	producer sarama.AsyncProducer
+	writer *kafka.Writer
 }
 
-func NewProducer(ctx context.Context, kafkaBrokers []string) (*Producer, error) {
-	config := sarama.NewConfig()
-	config.Producer.RequiredAcks = sarama.WaitForLocal
-	config.Producer.Flush.Frequency = 500 * time.Millisecond
+func NewProducer(
+	writer *kafka.Writer,
+) *Producer {
+	return &Producer{
+		writer: writer,
+	}
+}
 
-	producer, err := sarama.NewAsyncProducer(kafkaBrokers, config)
+func (p *Producer) ProduceMessage(ctx context.Context, messages [][]byte) error {
+	kafkaMessages := make([]kafka.Message, 0, len(messages))
+	for _, msg := range messages {
+		kafkaMessages = append(kafkaMessages, kafka.Message{
+			Value: msg,
+		})
+	}
+
+	err := p.writer.WriteMessages(ctx, kafkaMessages...)
 	if err != nil {
-		return nil, fmt.Errorf("sarama.NewAsyncProducer: %w", err)
+		return fmt.Errorf("writer.WriteMessages: %w", err)
 	}
 
-	kafkaProducer := &Producer{producer: producer}
-
-	return kafkaProducer, nil
-}
-
-func (p *Producer) Close() error {
-	return p.producer.Close()
-}
-
-func (p *Producer) ProduceMessage(topic string, messageBytes []byte) {
-	msg := &sarama.ProducerMessage{
-		Topic: topic,
-		Value: sarama.ByteEncoder(messageBytes),
-	}
-
-	p.producer.Input() <- msg
+	return nil
 }

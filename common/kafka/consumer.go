@@ -2,38 +2,116 @@ package kafka
 
 import (
 	"context"
-	"fmt"
-
-	"github.com/IBM/sarama"
+	"errors"
+	"github.com/fidesy/sdk/common/logger"
+	"github.com/segmentio/kafka-go"
+	"math"
+	"sync"
+	"time"
 )
 
-type Consumer struct {
-	consumer sarama.PartitionConsumer
-}
+type (
+	Consumer struct {
+		reader         *kafka.Reader
+		messageHandler MessageHandler
+		retryConfig    RetryConfig
 
-func NewConsumer(_ context.Context, brokers []string, topicName string) (*Consumer, error) {
-	config := sarama.NewConfig()
-	config.Consumer.Offsets.Initial = sarama.OffsetOldest
-
-	consumer, err := sarama.NewConsumer(brokers, config)
-	if err != nil {
-		return nil, fmt.Errorf("sarama.NewConsumer: %w", err)
+		locks map[int]*sync.Mutex
 	}
 
-	partitionConsumer, err := consumer.ConsumePartition(topicName, 0, sarama.OffsetNewest)
-	if err != nil {
-		return nil, fmt.Errorf("consumer.ConsumePartition: %w", err)
+	RetryConfig struct {
+		// Default math.MaxInt
+		MaxRetries int
+		// Default 500ms
+		RetryDuration time.Duration
 	}
 
-	kafkaConsumer := &Consumer{consumer: partitionConsumer}
+	MessageHandler interface {
+		ProcessMessage(ctx context.Context, message []byte) error
+	}
+)
 
-	return kafkaConsumer, nil
+func NewConsumer(
+	reader *kafka.Reader,
+	messageHandler MessageHandler,
+	retryConfig RetryConfig,
+	partitionsAmount int,
+) *Consumer {
+	locks := make(map[int]*sync.Mutex, partitionsAmount)
+	for i := 0; i < partitionsAmount; i++ {
+		locks[i] = &sync.Mutex{}
+	}
+
+	// Apply default config value
+
+	if retryConfig.RetryDuration == time.Duration(0) {
+		retryConfig.RetryDuration = 500 * time.Millisecond
+	}
+
+	if retryConfig.MaxRetries == 0 {
+		retryConfig.MaxRetries = math.MaxInt
+	}
+
+	return &Consumer{
+		reader:         reader,
+		messageHandler: messageHandler,
+		retryConfig:    retryConfig,
+		locks:          locks,
+	}
 }
 
-func (c *Consumer) Close() error {
-	return c.consumer.Close()
+func (c *Consumer) Consume(ctx context.Context) error {
+	for {
+		m, err := c.reader.FetchMessage(ctx)
+		if err != nil {
+			logger.Errorf("reader.FetchMessage: %v", err)
+			break
+		}
+
+		// !!!
+		// Every partition in loop
+
+		// Waiting until previous message is done
+		c.locks[m.Partition].Lock()
+
+		err = c.messageHandler.ProcessMessage(ctx, m.Value)
+		if err != nil {
+			logger.Info("error while consuming message...")
+			err = c.consumeWithRetries(ctx, m)()
+			if err != nil {
+				logger.Errorf("consumeWithRetries: %v", err)
+				// Must send to DLQ
+			}
+		}
+
+		err = c.reader.CommitMessages(ctx, m)
+		if err != nil {
+			logger.Errorf("reader.CommitMessages: %v", err)
+		}
+
+		c.locks[m.Partition].Unlock()
+	}
+
+	return nil
 }
 
-func (c *Consumer) Consume() <-chan *sarama.ConsumerMessage {
-	return c.consumer.Messages()
+func (c *Consumer) consumeWithRetries(ctx context.Context, message kafka.Message) func() error {
+	retries := 0
+
+	return func() error {
+		for retries < c.retryConfig.MaxRetries {
+			retries++
+
+			err := c.messageHandler.ProcessMessage(ctx, message.Value)
+			if err != nil {
+				logger.Errorf("messageHandler.ProcessMessage: %v", err)
+				time.Sleep(c.retryConfig.RetryDuration)
+				continue
+			}
+
+			return nil
+		}
+
+		return errors.New("error while consuming message, all attempts exceeded")
+	}
 }
