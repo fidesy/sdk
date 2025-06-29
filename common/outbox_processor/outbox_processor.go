@@ -12,6 +12,9 @@ import (
 
 type (
 	Service struct {
+		fetchDuration   time.Duration
+		listOutboxLimit int64
+
 		topicName string
 
 		storage       Storage
@@ -19,8 +22,8 @@ type (
 	}
 
 	Storage interface {
-		ListOutboxMessages(ctx context.Context, limit uint64) ([]*Message, error)
-		DeleteOutboxMessages(ctx context.Context, ids []int64) error
+		ListOutboxMessages(ctx context.Context, limit int64) ([]*Message, error)
+		UpdateOutboxMessagesSentAt(ctx context.Context, ids []int64) error
 	}
 
 	KafkaProducer interface {
@@ -28,21 +31,45 @@ type (
 	}
 )
 
+type Option func(s *Service)
+
+func WithFetchDuration(duration time.Duration) Option {
+	return func(s *Service) {
+		s.fetchDuration = duration
+	}
+}
+
+func WithListOutboxLimit(limit int64) Option {
+	return func(s *Service) {
+		s.listOutboxLimit = limit
+	}
+}
+
 func New(
 	tableName string,
 	topicName string,
 	pool *pgxpool.Pool,
 	producer KafkaProducer,
+	options ...Option,
 ) *Service {
-	return &Service{
+	s := &Service{
+		fetchDuration:   500 * time.Millisecond,
+		listOutboxLimit: 100,
+
 		topicName:     topicName,
 		storage:       NewStorage(tableName, pool),
 		kafkaProducer: producer,
 	}
+
+	for _, opt := range options {
+		opt(s)
+	}
+
+	return s
 }
 
 func (s *Service) Publish(ctx context.Context) {
-	ticker := time.NewTicker(500 * time.Millisecond)
+	ticker := time.NewTicker(s.fetchDuration)
 	defer ticker.Stop()
 
 	for {
@@ -58,7 +85,7 @@ func (s *Service) Publish(ctx context.Context) {
 func (s *Service) publish(ctx context.Context) {
 	ctx = context.WithValue(ctx, "skip_span", true)
 
-	messages, err := s.storage.ListOutboxMessages(ctx, 100)
+	messages, err := s.storage.ListOutboxMessages(ctx, s.listOutboxLimit)
 	if err != nil {
 		logger.Errorf("storage.ListOutboxMessages: %v", err)
 		return
@@ -72,11 +99,13 @@ func (s *Service) publish(ctx context.Context) {
 		s.kafkaProducer.ProduceMessage(s.topicName, []byte(message.Message))
 	}
 
-	err = s.storage.DeleteOutboxMessages(ctx, lo.Map(messages, func(message *Message, _ int) int64 {
+	messagesIDs := lo.Map(messages, func(message *Message, _ int) int64 {
 		return message.ID
-	}))
+	})
+
+	err = s.storage.UpdateOutboxMessagesSentAt(ctx, messagesIDs)
 	if err != nil {
-		logger.Errorf("storage.DeleteOutboxMessages: %v", err,
+		logger.Errorf("storage.UpdateOutboxMessagesSentAt: %v", err,
 			zap.Int("messageID:", int(messages[0].ID)),
 		)
 	}
