@@ -3,6 +3,7 @@ package outbox_processor
 import (
 	"context"
 	"fmt"
+	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/fidesy/sdk/common/postgres"
@@ -21,18 +22,24 @@ func NewStorage(tableName string, pool *pgxpool.Pool) *storage {
 	}
 }
 
-func (s *storage) ListOutboxMessages(ctx context.Context, limit uint64) ([]*Message, error) {
+func (s *storage) ListOutboxMessages(ctx context.Context, limit int64) ([]*Message, error) {
 	query := postgres.Builder().
-		Select("id, message").
+		Select("id, message, created_at, sent_at").
 		From(s.tableName).
-		Limit(limit)
+		Where(sq.Eq{
+			"sent_at": nil,
+		}).
+		Limit(uint64(limit))
 
 	return postgres.Select[Message](ctx, s.pool, query)
 }
 
-func (s *storage) DeleteOutboxMessages(ctx context.Context, ids []int64) error {
+func (s *storage) UpdateOutboxMessagesSentAt(ctx context.Context, ids []int64) error {
 	query := postgres.Builder().
-		Delete(s.tableName).
+		Update(s.tableName).
+		SetMap(map[string]interface{}{
+			"sent_at": time.Now().UTC(),
+		}).
 		Where(sq.Eq{
 			"id": ids,
 		}).
