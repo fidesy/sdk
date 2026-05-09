@@ -3,11 +3,13 @@ package kafka
 import (
 	"context"
 	"errors"
-	"github.com/fidesy/sdk/common/logger"
-	"github.com/segmentio/kafka-go"
+	"fmt"
 	"math"
 	"sync"
 	"time"
+
+	"github.com/fidesy/sdk/common/logger"
+	"github.com/segmentio/kafka-go"
 )
 
 type (
@@ -76,7 +78,7 @@ func (c *Consumer) Consume(ctx context.Context) error {
 
 		err = c.messageHandler.ProcessMessage(ctx, m.Value)
 		if err != nil {
-			logger.Info("error while consuming message...")
+			logger.Info(fmt.Sprintf("error while consuming message: %v", err))
 			err = c.consumeWithRetries(ctx, m)()
 			if err != nil {
 				logger.Errorf("consumeWithRetries: %v", err)
